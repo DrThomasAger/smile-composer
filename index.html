@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smile Composer</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:-apple-system,system-ui,Segoe UI,Helvetica,Arial,sans-serif;background:white;color:black;padding:40px}
+    .container{display:flex;gap:24px;align-items:flex-start}
+    .left{flex:1;min-width:0}
+    .right{flex:0 0 380px;display:flex;flex-direction:column;gap:24px}
+    .panel{border:1px solid #eee;padding:16px;border-radius:8px}
+    .panel-title{font-weight:600;margin-bottom:8px}
+
+    .line{user-select:none;padding:6px 8px;border-radius:8px;display:block}
+    .line.clickable{cursor:pointer}
+    .line.draggable{cursor:grab}
+    .line.sel{background:#eee}
+    .line.dragging{outline:1px dashed #999;background:#fafafa;font-weight:700}
+    .line.held{font-weight:700;cursor:grabbing}
+    .line.drop-before{border-top:2px solid #000}
+    .line.drop-after{border-bottom:2px solid #000}
+    .line:hover{text-decoration:underline}
+
+    .name-input{border:none;border-bottom:1px solid #000;font:inherit;padding:0 2px;background:transparent;min-width:160px}
+    .expand{margin-left:24px}
+    textarea,input[type="text"]{width:100%;border:1px solid #ccc;padding:8px;font:inherit}
+    textarea{min-height:80px}
+    .root-row{display:flex;align-items:center;gap:8px}
+    .btn{font:inherit;border:1px solid #000;background:#fff;padding:2px 6px;border-radius:6px;cursor:pointer}
+    .btn:hover{background:#f3f3f3}
+
+    .search-wrap{padding-left:24px;margin-top:8px}
+    .search-list{max-height:220px;overflow:auto;border:1px solid #ddd;border-radius:6px;margin-top:6px}
+    .search-item{padding:6px 8px;cursor:pointer}
+    .search-item:hover{background:#f6f6f6}
+    .search-badge{font-size:11px;border:1px solid #bbb;border-radius:10px;padding:0 6px;margin-left:6px}
+
+    .prompt-pre{white-space:pre-wrap;border:1px solid #ccc;border-radius:6px;padding:8px;margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    .error{color:red;padding:20px;border:1px solid red;margin:20px}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react">
+  (function(){
+    if(!(window.React && window.ReactDOM)){
+      document.getElementById('root').innerHTML = '<div class="error">Failed to load React</div>';
+      return;
+    }
+    const {useState,useEffect,useRef} = React;
+
+    const DB={
+      'expert-maker':{name:'Expert Maker',type:'agent',input:'Question',output:'Answer',modules:['meta-info','jargon-cot','identify-mistakes']},
+      'input-mod':{name:'INPUT: Question',type:'mod',items:['input-enter','input-understand','input-result']},
+      'output-mod':{name:'OUTPUT: Answer',type:'mod',items:['output-enter','output-understand','output-result']},
+      'meta-info':{name:'Meta-Information MegaBrick',type:'mod',items:['smile-info','llm-info','user-info']},
+      'jargon-cot':{name:'Jargon CoT',type:'mod',items:['emoji-section','bold-words','top-bottom']},
+      'identify-mistakes':{name:'Identify Mistakes and Rewrite',type:'mod',items:['emoji-section','bold-words','negative-rewrite']},
+      'smile-info':{name:'Information About (: Smile',type:'instr',text:'Explain Smile syntax: (: flexible, [: rigid, [= literal.'},
+      'llm-info':{name:'Information About LLMs',type:'instr',text:'Meta-knowledge about how LLMs process instructions.'},
+      'user-info':{name:'Information About User',type:'instr',text:'Contextualize user needs and goals.'},
+      'emoji-section':{name:'Emoji section name',type:'instr',text:'Use two emoticons for section names.'},
+      'bold-words':{name:'Bold for important words',type:'instr',text:'Use **bold** for attention retention over long contexts.'},
+      'top-bottom':{name:'Maximize adherence through top+bottom replication',type:'instr',text:'Replicate critical instructions at beginning and end.'},
+      'negative-rewrite':{name:'Identify negatives and rewrite to positive',type:'instr',text:'Find negatives like "not" and rewrite as positive articulations.'},
+      'input-enter':{name:'Provide Input',type:'instr',text:'Enter or paste the incoming question or payload in full fidelity.'},
+      'input-understand':{name:'Reasoning / Understanding',type:'instr',text:'Interpret the input; list goals, constraints, and ambiguities.'},
+      'input-result':{name:'Synthesis (Input + Understanding)',type:'instr',text:'Combine the raw input with the understanding into a structured representation.'},
+      'output-enter':{name:'Draft Output',type:'instr',text:'Produce an initial answer or output shape based on the current state.'},
+      'output-understand':{name:'Quality / Checks',type:'instr',text:'Reason about correctness, coverage, and criteria; refine the output.'},
+      'output-result':{name:'Final Output',type:'instr',text:'Deliver the polished final output after reasoning and checks.'}
+    };
+
+    function App(){
+      const [path,setPath]=useState(['expert-maker']);
+      const [idx,setIdx]=useState(0);
+      const [edit,setEdit]=useState(null);
+      const [expanded,setExpanded]=useState({});
+      const [drag,setDrag]=useState(null);
+      const [dmouse,setDmouse]=useState(null);
+      const [data,setData]=useState(()=>{
+        try{
+          const stored = localStorage.getItem('smileData');
+          return stored ? JSON.parse(stored) : {};
+        }catch(e){
+          console.error('Failed to load data:', e);
+          return {};
+        }
+      });
+      const [showPrompt,setShowPrompt]=useState(()=>{
+        try{
+          const ui = JSON.parse(localStorage.getItem('smileUI')||'{}');
+          return !!ui.showPrompt;
+        }catch(e){
+          return false;
+        }
+      });
+
+      const editRef=useRef(null);
+      const bodyRefs=useRef({});
+      const [focusBodyKey,setFocusBodyKey]=useState(null);
+      const [addingFor,setAddingFor]=useState(null);
+      const [addingModule,setAddingModule]=useState(false);
+      const addNameRef=useRef(null);
+      const addModRef=useRef(null);
+      const [instrQuery,setInstrQuery]=useState('');
+      const [modQuery,setModQuery]=useState('');
+
+      const atAgent=path.length===1;
+      const atModule=path.length>=2;
+      const agent=DB[path[0]] || DB['expert-maker'];
+      const module=atModule ? (DB[path[path.length-1]] || null) : null;
+
+      const get=(k,def)=>(k in data)?data[k]:def;
+      const set=(k,v)=>{
+        setData(d=>{
+          const nx={...d,[k]:v};
+          try{
+            localStorage.setItem('smileData',JSON.stringify(nx));
+          }catch(e){
+            console.error('Failed to save:', e);
+          }
+          return nx;
+        });
+      };
+      
+      const reorder=(arr,from,to)=>{
+        if(!Array.isArray(arr)) return [];
+        const a=[...arr];
+        if(from<0||from>=a.length)return a;
+        if(to<0)to=0;
+        if(to>a.length)to=a.length;
+        const [x]=a.splice(from,1);
+        a.splice(to,0,x);
+        return a;
+      };
+
+      useEffect(()=>{
+        try{
+          localStorage.setItem('smileUI',JSON.stringify({showPrompt}));
+        }catch(e){}
+      },[showPrompt]);
+
+      // Build rows
+      const rows=[];
+      const groupCounts={};
+      
+      try{
+        rows.push({key:'root',type:'root',depth:0,label:'(: Smile Composer'});
+        rows.push({key:`agent:${path[0]}`,type:'agent',depth:1,label:get(`n-${agent.name}`,agent.name),editable:atAgent,clickable:true});
+        
+        // Add breadcrumbs for nested modules (all except the current one)
+        if(path.length > 2){
+          for(let i=1; i<path.length-1; i++){
+            const breadcrumbMod = DB[path[i]];
+            if(breadcrumbMod){
+              rows.push({
+                key:`breadcrumb:${i}`,
+                type:'breadcrumb',
+                depth:i+1,
+                label:get(`n-${breadcrumbMod.name}`,breadcrumbMod.name),
+                pathIndex:i
+              });
+            }
+          }
+        }
+        
+        // Add breadcrumb for all modules in path (except the last one which is current)
+        if(path.length > 2){
+          for(let i=1; i<path.length-1; i++){
+            const breadcrumbMod = DB[path[i]];
+            if(breadcrumbMod){
+              rows.push({
+                key:`breadcrumb:${path[i]}`,
+                type:'breadcrumb',
+                depth:2,
+                label:get(`n-${breadcrumbMod.name}`,breadcrumbMod.name),
+                pathIndex:i
+              });
+            }
+          }
+        }
+
+        const userModuleOrder=get(`mods-${agent.name}`,agent.modules) || [];
+        
+        if(atAgent){
+          rows.push({key:'mod:input-mod',type:'module-link',depth:2,label:get(`n-${DB['input-mod'].name}`,DB['input-mod'].name),fixed:true});
+          
+          let countMods=0;
+          userModuleOrder.forEach((m,pos)=>{
+            if(DB[m]){
+              rows.push({key:`mod:${m}`,type:'module-link',depth:2,label:get(`n-${DB[m].name}`,DB[m].name),pos,group:'modules'});
+              countMods++;
+            }
+          });
+          groupCounts['modules']=countMods;
+          
+          rows.push({key:'agent:addmod',type:'adder-mod',depth:2,label:'+ Add Module'});
+          rows.push({key:'mod:output-mod',type:'module-link',depth:2,label:get(`n-${DB['output-mod'].name}`,DB['output-mod'].name),fixed:true});
+        }
+
+        if(atModule&&module){
+          const moduleDepth = path.length + 1;
+          const currentModuleId = path[path.length-1];
+          
+          rows.push({key:`module:${currentModuleId}`,type:'module',depth:moduleDepth,label:get(`n-${module.name}`,module.name),editable:true});
+          
+          const topKey=`comp:${currentModuleId}:heavyStart`;
+          rows.push({key:topKey,type:'comp',subtype:'heavy-start',depth:moduleDepth+1,label:'Heavy start structure',textKey:`comp-heavyStart-${module.name}`});
+          if(expanded[topKey]) rows.push({key:`${topKey}:body`,type:'comp-body',depth:moduleDepth+2,compKey:topKey,textKey:`comp-heavyStart-${module.name}`});
+
+          const itemKey=`items-${module.name}`;
+          const itemList=get(itemKey,module.items||[]);
+          let insCount=0;
+          let modCount=0;
+          
+          if(Array.isArray(itemList)){
+            itemList.forEach((it,pos)=>{
+              const isId=(typeof it==='string');
+              const iid=isId?it:it.id;
+              const base=isId?DB[iid]:it;
+              if(!base) return;
+              
+              // Check if it's a module
+              if(base.type === 'mod'){
+                const nameKey=isId?`n-${base.name}`:`n-${iid}`;
+                const labelDefault=isId?base.name:(base.name||'New Module');
+                const rkey=`mod:${iid}`;
+                
+                rows.push({
+                  key:rkey,
+                  type:'module-link',
+                  depth:moduleDepth+1,
+                  label:get(nameKey,labelDefault),
+                  pos,
+                  group:`mods:${currentModuleId}`,
+                  moduleId:iid
+                });
+                modCount++;
+              } else {
+                // It's an instruction
+                const nameKey=isId?`n-${base.name}`:`n-${iid}`;
+                const textKey=isId?`t-${base.name}`:`t-${iid}`;
+                const labelDefault=isId?base.name:(base.name||'New Instruction');
+                const rkey=`ins:${currentModuleId}:${pos}:${iid}`;
+                
+                rows.push({
+                  key:rkey,
+                  type:'ins',
+                  depth:moduleDepth+1,
+                  label:get(nameKey,labelDefault),
+                  textKey,
+                  nameKey,
+                  isDynamic:!isId,
+                  pos,
+                  group:`ins:${currentModuleId}`,
+                  moduleId:currentModuleId,
+                  expandKey:rkey
+                });
+                insCount++;
+                
+                if(expanded[rkey]){
+                  rows.push({
+                    key:`${rkey}:body`,
+                    type:'ins-body',
+                    depth:moduleDepth+2,
+                    textKey,
+                    insKey:rkey,
+                    defaultText:isId?(base.text||''):(base.text||'')
+                  });
+                }
+              }
+            });
+          }
+          
+          groupCounts[`ins:${currentModuleId}`]=insCount;
+          groupCounts[`mods:${currentModuleId}`]=modCount;
+          rows.push({key:'module:add',type:'adder',depth:moduleDepth+1,label:'+ Add Instruction'});
+          
+          const botKey=`comp:${currentModuleId}:avgEnd`;
+          rows.push({key:botKey,type:'comp',subtype:'avg-end',depth:moduleDepth+1,label:'Average end structure',textKey:`comp-avgEnd-${module.name}`});
+          if(expanded[botKey]) rows.push({key:`${botKey}:body`,type:'comp-body',depth:moduleDepth+2,compKey:botKey,textKey:`comp-avgEnd-${module.name}`});
+        }
+      }catch(e){
+        console.error('Error building rows:', e);
+      }
+
+      useEffect(()=>{
+        setIdx(i=>Math.max(0,Math.min(i,rows.length-1)));
+      },[rows.length]);
+
+      useEffect(()=>{
+        if(edit!==null&&editRef.current){
+          try{ editRef.current.focus(); }catch(e){}
+        }
+      },[edit]);
+
+      useEffect(()=>{
+        if(focusBodyKey&&expanded[focusBodyKey]){
+          const el=bodyRefs.current[focusBodyKey];
+          if(el){
+            try{
+              el.focus();
+              el.selectionStart=el.selectionEnd=el.value.length;
+            }catch(e){}
+          }
+          setFocusBodyKey(null);
+        }
+      },[expanded,focusBodyKey]);
+
+      // Search functions
+      const listDBModules=()=>Object.keys(DB).filter(k=>DB[k].type==='mod'&&k!=='input-mod'&&k!=='output-mod');
+      const listDBInstr=()=>Object.keys(DB).filter(k=>DB[k].type==='instr');
+      
+      const searchAll=q=>{
+        const n=(q||'').toLowerCase();
+        const mods=listDBModules().map(id=>({id,name:DB[id].name,type:'mod',source:'db'}));
+        const instrs=listDBInstr().map(id=>({id,name:DB[id].name,text:DB[id].text||'',type:'instr',source:'db'}));
+        return [...mods,...instrs].filter(x=>!n||x.name.toLowerCase().includes(n)||(x.text&&x.text.toLowerCase().includes(n)));
+      };
+
+      const searchInstr=q=>{
+        const term=(q||'').toLowerCase();
+        const results=[];
+        Object.keys(DB).forEach(id=>{
+          const entry=DB[id];
+          if(entry.type==='instr'){
+            const name=entry.name||'';
+            const text=entry.text||'';
+            if(!term||name.toLowerCase().includes(term)||text.toLowerCase().includes(term)){
+              results.push({id,name,text,type:'instr',source:'db'});
+            }
+          }
+        });
+
+        const seen=new Set(results.map(r=>`${r.source}:${r.id}`));
+        Object.keys(DB).forEach(modId=>{
+          const mod=DB[modId];
+          if(mod.type!=='mod') return;
+          const key=`items-${mod.name}`;
+          const list=get(key,mod.items||[]);
+          if(!Array.isArray(list)) return;
+          list.forEach(item=>{
+            if(item&&typeof item==='object'&&!Array.isArray(item)){
+              const localId=item.id||`${modId}:${Math.random().toString(16).slice(2)}`;
+              const name=item.name||'New Instruction';
+              const text=item.text||'';
+              const sig=`local:${localId}`;
+              if(seen.has(sig)) return;
+              if(!term||name.toLowerCase().includes(term)||text.toLowerCase().includes(term)){
+                results.push({id:localId,name,text,type:'instr',source:'local',moduleId:modId,raw:item});
+                seen.add(sig);
+              }
+            }
+          });
+        });
+
+        results.sort((a,b)=>{
+          if(a.source!==b.source){
+            return a.source==='db'?-1:1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        return results;
+      };
+
+      const addInstructionFromResult=(moduleId,res)=>{
+        if(!DB[moduleId]) return;
+        const mod=DB[moduleId];
+        const key=`items-${mod.name}`;
+        const current=get(key,mod.items||[]);
+        const list=Array.isArray(current)?[...current]:[];
+
+        if(res.source==='db'){
+          if(!list.includes(res.id)){
+            list.push(res.id);
+          }
+        }else{
+          if(res.moduleId===moduleId && res.raw){
+            const already=list.some(item=>item&&typeof item==='object'&&!Array.isArray(item)&&item.id===res.raw.id);
+            if(already) return;
+          }
+
+          const base=res.raw||{};
+          const newInstr={
+            id:res.moduleId===moduleId&&res.raw?res.raw.id:`dyn:${Date.now()}:${Math.random().toString(16).slice(2,8)}`,
+            name:res.name||base.name||'New Instruction',
+            text:res.text||base.text||'',
+            type:'instr'
+          };
+          list.push(newInstr);
+        }
+
+        set(key,list);
+      };
+
+      const addItemToList=(targetId,isAgent,item)=>{
+        if(isAgent){
+          // Adding to agent's module list
+          const order=get(`mods-${agent.name}`,agent.modules)||[];
+          if(!order.includes(item.id)){
+            set(`mods-${agent.name}`,[...order,item.id]);
+          }
+        }else{
+          // Adding to module's items list
+          const mod=DB[targetId];
+          if(!mod) return;
+          const key=`items-${mod.name}`;
+          const cur=get(key,mod.items||[]);
+          const newList=[...cur];
+          
+          if(item.type==='mod'){
+            // Adding a module reference
+            if(!newList.includes(item.id)){
+              newList.push(item.id);
+            }
+          }else{
+            // Adding an instruction reference
+            if(!newList.includes(item.id)){
+              newList.push(item.id);
+            }
+          }
+          set(key,newList);
+        }
+      };
+
+      const commitAddInstruction=(modId,name)=>{
+        if(!DB[modId]) return;
+        const mod=DB[modId];
+        const key=`items-${mod.name}`;
+        const cur=get(key,mod.items||[]);
+        const id='dyn:'+Date.now();
+        set(key,[...cur,{id,name:name||'New Instruction',text:'',type:'instr'}]);
+      };
+
+      const reorderModules=(from,to)=>{
+        const order=get(`mods-${agent.name}`,agent.modules)||[];
+        set(`mods-${agent.name}`,reorder(order,from,to));
+      };
+
+      const reorderIns=(moduleId,from,to)=>{
+        if(!DB[moduleId]) return;
+        const mod=DB[moduleId];
+        const key=`items-${mod.name}`;
+        const list=get(key,mod.items||[]);
+        set(key,reorder(list,from,to));
+      };
+
+      // Keyboard handlers
+      useEffect(()=>{
+        const onKey=e=>{
+          const el=e.target;
+          const inText=(el&&el.tagName&&(el.tagName==='TEXTAREA'||(el.tagName==='INPUT'&&!el.classList.contains('name-input'))));
+          if(inText)return;
+          
+          const isEnter=(e.key==='Enter'||e.code==='Enter'||e.keyCode===13);
+          
+          if(drag){
+            if(e.key==='ArrowUp'||e.key==='ArrowDown'){
+              e.preventDefault();
+              const delta=e.key==='ArrowUp'?-1:1;
+              const from=drag.index;
+              const to=from+delta;
+              
+              if(drag.type==='module'){
+                const modsLen=groupCounts['modules']||0;
+                if(to>=0&&to<modsLen){
+                  reorderModules(from,to);
+                  setDrag({...drag,index:to});
+                }
+              }else if(drag.type==='ins'){
+                const mod=DB[drag.moduleId];
+                if(mod){
+                  const key=`items-${mod.name}`;
+                  const list=get(key,mod.items||[]);
+                  if(to>=0&&to<list.length){
+                    reorderIns(drag.moduleId,from,to);
+                    setDrag({...drag,index:to});
+                  }
+                }
+              }
+              return;
+            }
+            if(isEnter||e.key==='Escape'){
+              e.preventDefault();
+              setDrag(null);
+              return;
+            }
+          }
+          
+          if(e.key==='ArrowDown'){
+            e.preventDefault();
+            setIdx(i=>Math.min(i+1,rows.length-1));
+            return;
+          }
+          if(e.key==='ArrowUp'){
+            e.preventDefault();
+            setIdx(i=>Math.max(i-1,0));
+            return;
+          }
+          if(e.key==='ArrowRight'){
+            e.preventDefault();
+            const r=rows[idx];
+            if(r && r.type==='module-link'){
+              setPath([path[0],r.key.split(':')[1]]);
+              return;
+            }
+            if(r && (r.type==='ins'||r.type==='comp')){
+              const rk=r.key;
+              setExpanded(prev=>{
+                const open=!prev[rk];
+                const nx={...prev,[rk]:open};
+                if(open) setFocusBodyKey(rk);
+                return nx;
+              });
+            }
+            return;
+          }
+          if(e.key==='ArrowLeft'){
+            e.preventDefault();
+            if(atModule){
+              setPath([path[0]]);
+              setIdx(1);
+            }
+            return;
+          }
+          if(isEnter){
+            const r=rows[idx];
+            if(r && r.type==='adder'&&atModule){
+              e.preventDefault();
+              setAddingFor(path[1]);
+              setInstrQuery('');
+              return;
+            }
+            if(r && r.type==='adder-mod'&&atAgent){
+              e.preventDefault();
+              setAddingModule(true);
+              setModQuery('');
+              return;
+            }
+            if(r && ((r.type==='module-link'&&typeof r.pos==='number')||r.type==='ins')){
+              e.preventDefault();
+              setDrag({
+                key:r.key,
+                type:r.type==='ins'?'ins':'module',
+                moduleId:r.moduleId||null,
+                index:r.pos
+              });
+              return;
+            }
+          }
+          
+          const keyStr=typeof e.key==='string'?e.key:'';
+          const printable=(keyStr.length===1)||(e.keyCode>=48&&e.keyCode<=90);
+          if(printable&&!e.ctrlKey&&!e.metaKey){
+            const r=rows[idx];
+            const canRename=r && ((r.type==='agent'&&atAgent)||(atModule&&(r.type==='module'||r.type==='ins')));
+            if(canRename){
+              setEdit(idx);
+              e.preventDefault();
+            }
+          }
+          
+          if(e.key==='Escape'){
+            setEdit(null);
+            setAddingFor(null);
+            setAddingModule(false);
+            setDrag(null);
+            setDmouse(null);
+          }
+        };
+        
+        window.addEventListener('keydown',onKey);
+        return()=>window.removeEventListener('keydown',onKey);
+      },[rows,idx,atAgent,atModule,path,drag,data,groupCounts]);
+
+      // Mouse drag
+      useEffect(()=>{
+        if(!dmouse) return;
+        
+        const move=e=>{
+          if(!dmouse) return;
+          const threshold=4;
+          const dy=Math.abs(e.clientY-dmouse.startY);
+          const dx=Math.abs(e.clientX-dmouse.startX);
+          
+          if(!dmouse.started&&(dy>threshold||dx>threshold)){
+            setDmouse(p=>p?{...p,started:true}:p);
+            return;
+          }
+          
+          if(!dmouse.started) return;
+          
+          const nodes=Array.from(document.querySelectorAll(`.line[data-group="${dmouse.group}"]`));
+          if(!nodes.length){
+            setDmouse(p=>p?{...p,overIndex:0}:p);
+            return;
+          }
+          
+          let index=nodes.length;
+          for(let i=0;i<nodes.length;i++){
+            const rect=nodes[i].getBoundingClientRect();
+            const mid=rect.top+rect.height/2;
+            if(e.clientY<mid){
+              index=i;
+              break;
+            }
+          }
+          setDmouse(p=>p?{...p,overIndex:index}:p);
+        };
+        
+        const up=()=>{
+          if(!dmouse) return;
+          if(dmouse.started){
+            const to=dmouse.overIndex??dmouse.fromIndex;
+            try{
+              if(dmouse.type==='module'){
+                reorderModules(dmouse.fromIndex,to);
+              }else if(dmouse.type==='ins'){
+                reorderIns(dmouse.moduleId,dmouse.fromIndex,to);
+              }
+            }catch(e){
+              console.error('Drop error:', e);
+            }
+          }
+          setDmouse(null);
+        };
+        
+        window.addEventListener('mousemove',move);
+        window.addEventListener('mouseup',up);
+        return()=>{
+          window.removeEventListener('mousemove',move);
+          window.removeEventListener('mouseup',up);
+        };
+      },[dmouse]);
+
+      // Render
+      const renderLine=(r,i)=>{
+        if(!r) return null;
+        
+        const sel=i===idx;
+        const isKbdDrag=drag&&drag.key===r.key;
+        const isMouseHold=dmouse&&dmouse.key===r.key&&dmouse.started;
+        const style={paddingLeft:r.depth*24};
+        const renaming=edit===i&&((r.type==='agent'&&atAgent)||(atModule&&(r.type==='module'||r.type==='ins')));
+        
+        const group=(r.type==='module-link'&&typeof r.pos==='number')?'modules':(r.type==='ins'?`ins:${r.moduleId}`:null);
+        const dropBefore=dmouse&&dmouse.started&&dmouse.group===group&&dmouse.overIndex===r.pos;
+        const isLast=group?((groupCounts[group]||0)-1===r.pos):false;
+        const dropAfter=dmouse&&dmouse.started&&dmouse.group===group&&(dmouse.overIndex===(groupCounts[group]||0))&&isLast;
+        
+        const classes=['line','clickable'];
+        if(group!==null) classes.push('draggable');
+        if(sel) classes.push('sel');
+        if(isKbdDrag) classes.push('dragging');
+        if(isMouseHold) classes.push('held');
+        if(dropBefore) classes.push('drop-before');
+        if(dropAfter) classes.push('drop-after');
+        
+        const clickLine=()=>{
+          setIdx(i);
+          if(r.type==='agent' && atModule){
+            setPath([path[0]]);
+            setIdx(1);
+            return;
+          }
+          if(r.type==='breadcrumb'){
+            // Navigate back to this level in the path
+            setPath(path.slice(0, r.pathIndex + 1));
+            setIdx(r.pathIndex + 1);
+            return;
+          }
+          if(r.type==='module-link'){
+            // Navigate into this module
+            const moduleId = r.moduleId || r.key.split(':')[1];
+            setPath([...path, moduleId]);
+            return;
+          }else if(r.type==='ins'||r.type==='comp'){
+            const rk=r.key;
+            setExpanded(prev=>{
+              const open=!prev[rk];
+              const nx={...prev,[rk]:open};
+              if(open) setFocusBodyKey(rk);
+              return nx;
+            });
+          }else if(r.type==='adder'){
+            setAddingFor(path[path.length-1]);
+            setInstrQuery('');
+          }else if(r.type==='adder-mod'){
+            setAddingModule(true);
+            setModQuery('');
+          }
+        };
+        
+        const onMouseDown=e=>{
+          if(group===null) return;
+          if(r.type==='module-link'&&r.fixed) return;
+          setIdx(i);
+          setDmouse({
+            key:r.key,
+            type:(r.type==='ins'?'ins':'module'),
+            group,
+            moduleId:r.moduleId||null,
+            fromIndex:r.pos,
+            overIndex:r.pos,
+            started:false,
+            startY:e.clientY,
+            startX:e.clientX
+          });
+          e.preventDefault();
+        };
+        
+        if(r.type==='root'){
+          return (
+            <div key={r.key} style={style}>
+              <div className="line root-row clickable" onClick={clickLine}>
+                <span>(: Smile Composer</span>
+              </div>
+            </div>
+          );
+        }
+        
+        if(r.type==='breadcrumb'){
+          return (
+            <div key={r.key} className={classes.join(' ')} style={style} onClick={clickLine}>
+              {labelNode}
+            </div>
+          );
+        }
+        
+        if(r.type==='comp-body'){
+          return (
+            <div key={r.key} className="expand" style={{paddingLeft:r.depth*24}}>
+              <textarea
+                ref={el=>{if(el)bodyRefs.current[r.compKey]=el;}}
+                value={get(r.textKey,'')}
+                onChange={e=>set(r.textKey,e.target.value)}
+                onKeyDown={e=>{
+                  const atStart=e.target.selectionStart===0&&e.target.selectionEnd===0;
+                  const enter=(e.key==='Enter'||e.keyCode===13);
+                  if((enter&&e.shiftKey)||(e.key==='ArrowLeft'&&atStart)){
+                    e.preventDefault();
+                    setExpanded(p=>{const nx={...p};delete nx[r.compKey];return nx;});
+                    setIdx(Math.max(0,i-1));
+                    e.target.blur();
+                  }
+                }}
+              />
+            </div>
+          );
+        }
+        
+        if(r.type==='ins-body'){
+          return (
+            <div key={r.key} className="expand" style={{paddingLeft:r.depth*24}}>
+              <textarea
+                ref={el=>{if(el)bodyRefs.current[r.insKey]=el;}}
+                value={get(r.textKey,r.defaultText||'')}
+                onChange={e=>set(r.textKey,e.target.value)}
+                onKeyDown={e=>{
+                  const atStart=e.target.selectionStart===0&&e.target.selectionEnd===0;
+                  const enter=(e.key==='Enter'||e.keyCode===13);
+                  if((enter&&e.shiftKey)||(e.key==='ArrowLeft'&&atStart)){
+                    e.preventDefault();
+                    setExpanded(p=>{const nx={...p};delete nx[r.insKey];return nx;});
+                    setIdx(Math.max(0,i-1));
+                    e.target.blur();
+                  }
+                }}
+              />
+            </div>
+          );
+        }
+        
+        if(r.type==='adder-mod'){
+          return (
+            <div key={r.key} className={classes.join(' ')} style={style} onClick={clickLine}>
+              <span>+ Add Module</span>
+              {addingModule&&(
+                <div className="search-wrap" onMouseDown={e=>e.stopPropagation()}>
+                  <input
+                    ref={addModRef}
+                    className="name-input"
+                    placeholder="Search modules & instructions..."
+                    value={modQuery}
+                    onChange={e=>setModQuery(e.target.value)}
+                    onKeyDown={e=>{
+                      const res=searchAll(modQuery);
+                      if((e.key==='Enter'||e.keyCode===13)&&res.length){
+                        addItemToList(path[0],true,res[0]);
+                        setAddingModule(false);
+                      }
+                      if(e.key==='Escape'){
+                        setAddingModule(false);
+                      }
+                    }}
+                  />
+                  <div className="search-list">
+                    {searchAll(modQuery).sort((a,b)=>a.type==='mod'?-1:1).map(res=>(
+                      <div key={res.id} className="search-item" onClick={()=>{addItemToList(path[0],true,res);setAddingModule(false);}}>
+                        {res.name}<span className="search-badge">{res.type}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+        
+        if(r.type==='adder'){
+          return (
+            <div key={r.key} className={classes.join(' ')} style={style} onClick={clickLine}>
+              <span>+ Add Instruction</span>
+              {addingFor===path[1]&&(
+                <div className="search-wrap" onMouseDown={e=>e.stopPropagation()}>
+                  <input
+                    ref={addNameRef}
+                    className="name-input"
+                    placeholder="Search instructions..."
+                    value={instrQuery}
+                    onChange={e=>setInstrQuery(e.target.value)}
+                    onKeyDown={e=>{
+                      const res=searchInstr(instrQuery);
+                      if((e.key==='Enter'||e.keyCode===13)){
+                        if(res.length){
+                          addInstructionFromResult(path[1],res[0]);
+                          setAddingFor(null);
+                          setInstrQuery('');
+                        }else if(instrQuery.trim()){
+                          commitAddInstruction(path[1],instrQuery.trim());
+                          setAddingFor(null);
+                          setInstrQuery('');
+                        }
+                      }
+                      if(e.key==='Escape'){
+                        setAddingFor(null);
+                        setInstrQuery('');
+                      }
+                    }}
+                  />
+                  <div className="search-list">
+                    {searchInstr(instrQuery).map(res=>(
+                      <div key={`${res.source}:${res.id}`} className="search-item" onClick={()=>{addInstructionFromResult(path[1],res);setAddingFor(null);setInstrQuery('');}}>
+                        {res.name}<span className="search-badge">{res.source==='db'?'instruction':'local'}</span>
+                      </div>
+                    ))}
+                    {!searchInstr(instrQuery).length && instrQuery && (
+                      <div className="search-item" onClick={()=>{commitAddInstruction(path[1],instrQuery.trim());setAddingFor(null);setInstrQuery('');}}>
+                        Create "{instrQuery.trim()}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+        
+        const labelNode=renaming?(
+          <input
+            className="name-input"
+            ref={editRef}
+            value={r.type==='agent'?get(`n-${agent.name}`,agent.name):r.type==='module'?get(`n-${module.name}`,module.name):get(r.nameKey,r.label)}
+            onChange={e=>{
+              if(r.type==='agent') set(`n-${agent.name}`,e.target.value);
+              else if(r.type==='module') set(`n-${module.name}`,e.target.value);
+              else set(r.nameKey,e.target.value);
+            }}
+            onKeyDown={e=>{
+              const isEnter=(e.key==='Enter'||e.keyCode===13);
+              if(r.type==='agent'&&isEnter&&e.shiftKey){
+                e.preventDefault();
+                setEdit(null);
+                e.currentTarget.blur();
+              }
+            }}
+            onBlur={()=>setEdit(null)}
+          />
+        ):(
+          <span>{r.label}</span>
+        );
+        
+        return (
+          <div
+            key={r.key}
+            className={classes.join(' ')}
+            style={style}
+            data-group={group||''}
+            data-index={typeof r.pos==='number'?r.pos:''}
+            onMouseDown={onMouseDown}
+            onClick={clickLine}
+          >
+            {labelNode}
+          </div>
+        );
+      };
+
+      return (
+        <div className="container">
+          <div className="left">
+            {rows.map((r,i)=>renderLine(r,i))}
+          </div>
+          <div className="right">
+            <div className="panel">
+              <div className="panel-title">Prompt</div>
+              <textarea
+                readOnly
+                value={'(: Smile Composer\n    '+get(`n-${agent.name}`,agent.name)+(atModule?path.slice(1).map(mid=>'\n        '+get(`n-${DB[mid]?.name}`,DB[mid]?.name||'')).join(''):'')}
+                style={{minHeight:'120px'}}
+              />
+            </div>
+            <div className="panel">
+              <div className="panel-title">Output</div>
+              <textarea
+                value={get(atModule?`output-${module.name}`:`output-${agent.name}`,atModule?'':agent.output)}
+                onChange={e=>set(atModule?`output-${module.name}`:`output-${agent.name}`,e.target.value)}
+                style={{minHeight:'200px'}}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    try{
+      ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+    }catch(e){
+      console.error('Mount error:', e);
+      document.getElementById('root').innerHTML = '<div class="error">Failed to mount: '+e.message+'</div>';
+    }
+  })();
+  </script>
+</body>
+</html>
