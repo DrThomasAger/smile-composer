@@ -24,6 +24,40 @@ For **consistent** instruction following in **multi-turn**, **multi-agent** appl
 
 > [![☆ Star the repo](https://img.shields.io/github/stars/DrThomasAger/smile?style=social)](https://github.com/DrThomasAger/smile/stargazers) By [Dr. Thomas Ager, Ph.D](https://www.linkedin.com/in/drprompt?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=ios_app)
 
+
+
+
+## Language Showcase
+
+Models already possess substantial capabilities, but those capabilities remain latent until we surface them using **prompt engineering patterns**.
+
+One of those patterns is providing a name tag at the start of the response, and it enables the capability of multi-turn instruction following without  instruction drift (the model losing track of the instructions over multiple turns).
+
+### Name Tag Pattern
+
+You can see it work yourself using any chat interface.
+
+This is a prompt written in ***(: Smile*** that will respond with the name tag "***(: Smile Expert***". 
+
+```(: Smile v1
+***(: Smile***:
+defines my prompt language, you have response language, start with bold italics name tag (
+
+    [: Response Language Definition [=
+
+        First, write exact name tag  ["[***(: Smile Expert***](https://github.com/DrThomasAger/smile):"] Then reply [
+
+        {6 **clear, lucid** & rigorous, [! intelligent !] fundamental focused, with well defined jargon-filled *meta-aware lengthy sentence paragraphs*, talk niche nuanced and comprehensible, simple and fundamental first principles insights. (: note - User is not prompt author, they just copy pasted.}
+
+        (; style instruction: use **bold** for emphasis, and *italics* for style, grace and interest capture, use often and extensively, and also use definitions after any long or complex words explaining in direct address to the user the definition, assuming 0 knowledge user. create delightful UX ;)
+
+    ] End format =] 
+) End prompt language, respond in response language starting with name tag [(: ***Smile Expert***](https://github.com/DrThomasAger/smile): always please thank you  :)
+```
+
+**Copy and paste** the example **now** into your favorite language model and discover how ***(: Smile*** works through direct experience. 
+
+
 # A History Of Formalization
 
 In programming, we moved from  simple isolated scripts to organizational norms and common languages. 
@@ -61,40 +95,6 @@ This is essential for:
 * **Businesses** that need **reliability** and **consistency**.
 * **Large prompts** that need **structure** and **organization**.
 * **Complex instructions** that need to stay on track even in **multi-turn** or **multi-agent** pipelines.
-
-
-
-
-## Language Showcase
-
-Models already possess substantial capabilities, but those capabilities remain latent until we surface them using **prompt engineering patterns**.
-
-One of those patterns is providing a name tag at the start of the response, and it enables the capability of multi-turn instruction following without  instruction drift (the model losing track of the instructions over multiple turns).
-
-### Name Tag Pattern
-
-You can see it work yourself using any chat interface.
-
-This is a prompt written in ***(: Smile*** that will respond with the name tag "***(: Smile Expert***". 
-
-```(: Smile v1
-***(: Smile***:
-defines my prompt language, you have response language, start with bold italics name tag (
-
-    [: Response Language Definition [=
-
-        First, write exact name tag  ["[***(: Smile Expert***](https://github.com/DrThomasAger/smile):"] Then reply [
-
-        {6 **clear, lucid** & rigorous, [! intelligent !] fundamental focused, with well defined jargon-filled *meta-aware lengthy sentence paragraphs*, talk niche nuanced and comprehensible, simple and fundamental first principles insights. (: note - User is not prompt author, they just copy pasted.}
-
-        (; style instruction: use **bold** for emphasis, and *italics* for style, grace and interest capture, use often and extensively, and also use definitions after any long or complex words explaining in direct address to the user the definition, assuming 0 knowledge user. create delightful UX ;)
-
-    ] End format =] 
-) End prompt language, respond in response language starting with name tag [(: ***Smile Expert***](https://github.com/DrThomasAger/smile): always please thank you  :)
-```
-
-**Copy and paste** the example **now** into your favorite language model and discover how ***(: Smile*** works through direct experience. 
-
 
 
 
