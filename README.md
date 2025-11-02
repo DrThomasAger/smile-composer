@@ -16,11 +16,11 @@ Meet ***(: SMILE!*** v1:
 
 ***(: Smile*** is the markup (like ***Markdown*** or ***XML***) where smile **emoticons** are used like brackets to write **structured instructions** for Large Language Models (LLMs).
 
+`(: Hello World! )`
+
 
 For **consistent** instruction following in **multi-turn**, **multi-agent** applications. 
 
-
-`(: Hello World! )`
 
 > [![☆ Star the repo](https://img.shields.io/github/stars/DrThomasAger/smile?style=social)](https://github.com/DrThomasAger/smile/stargazers) By [Dr. Thomas Ager, Ph.D](https://www.linkedin.com/in/drprompt?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=ios_app)
 
