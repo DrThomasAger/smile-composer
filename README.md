@@ -158,22 +158,6 @@ The ***(: Smile*** examples work on any LLM! Try an example on a free ***LLM*** 
 **Just copy and paste the example into one of the chats above, or check [here](#portability-and-compatibility) for alternative options.**
 
 
-## The Solution
-
-***(: Smile*** is a language formalized out of the recognition that we need a language that directly addresses prompt writing — and clearly separates concerns inside of our prompts.
-
-## Why Separate Concerns?
-
-Our UX is fundamentally a different concern than how we explain to the model what we want them to do. Instead of mixing them, (like using markdown for prompt and response language) our prompt structure has its own language, and our response structure is defined inside of its own section in the prompt. 
-
-This helps the model understand what's what, and helps your prompt engineers do that too.
-
-Whether you need JSON, markdown or just plain text outputs, you can ask for them in ***(: Smile***, define them clearly, and the model will not confuse your instructions for something it needs to replicate verbatim.
-
-By telling the model that this is ***(: Smile*** and then defining the response language clearly, we remove the possibility for context bleed. 
-
-This README is filled with example ***(: Smile*** prompt patterns that you can copy and paste to test. 
-
 # Prompt Engineering Patterns 
 
 ## Name Tags
@@ -203,6 +187,24 @@ So if it isn't provided, we know our prompt isn't working right away.
 ## But Seriously... Why Emoticons?
 
 Because people who work in AI need to ***(: Smile*** more. We make that more likely with ***(: Smile***.
+
+
+### The Solution
+
+***(: Smile*** is a language formalized out of the recognition that we need a language that directly addresses prompt writing — and clearly separates concerns inside of our prompts.
+
+### Why Separate Concerns?
+
+Our UX is fundamentally a different concern than how we explain to the model what we want them to do. Instead of mixing them, (like using markdown for prompt and response language) our prompt structure has its own language, and our response structure is defined inside of its own section in the prompt. 
+
+This helps the model understand what's what, and helps your prompt engineers do that too.
+
+Whether you need JSON, markdown or just plain text outputs, you can ask for them in ***(: Smile***, define them clearly, and the model will not confuse your instructions for something it needs to replicate verbatim.
+
+By telling the model that this is ***(: Smile*** and then defining the response language clearly, we remove the possibility for context bleed. 
+
+This README is filled with example ***(: Smile*** prompt patterns that you can copy and paste to test. 
+
 
 ### Emoticons Separate Concerns Clearly
 
